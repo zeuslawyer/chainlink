@@ -282,20 +282,6 @@ func (r *runner) run(
 	for taskRun := range scheduler.taskCh {
 		// execute
 		go func(taskRun *memoryTaskRun) {
-			defer func() {
-				if err := recover(); err != nil {
-					logger.Default.Errorw("goroutine panicked executing run", "panic", err, "stacktrace", string(debug.Stack()))
-
-					t := time.Now()
-					scheduler.report(todo, TaskRunResult{
-						ID:         uuid.NewV4(),
-						Task:       taskRun.task,
-						Result:     Result{Error: ErrRunPanicked{err}},
-						FinishedAt: null.TimeFrom(t),
-						CreatedAt:  t, // TODO: more accurate start time
-					})
-				}
-			}()
 			result := r.executeTaskRun(ctx, run.PipelineSpec, taskRun, l)
 
 			logTaskRunToPrometheus(result, run.PipelineSpec)
