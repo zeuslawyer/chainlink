@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smartcontractkit/chainlink/core/internal/testutils"
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/services/pipeline"
 )
@@ -16,6 +17,7 @@ import (
 func TestMeanTask(t *testing.T) {
 	t.Parallel()
 
+	mustInt := testutils.MustParseBigInt
 	tests := []struct {
 		name          string
 		inputs        []pipeline.Result
@@ -113,6 +115,34 @@ func TestMeanTask(t *testing.T) {
 			"1",
 			"-1",
 			pipeline.Result{Value: mustDecimal(t, "30")},
+		},
+		{
+			"large integers",
+			[]pipeline.Result{{Value: mustDecimal(t, "200000000000000000020")}, {Value: mustDecimal(t, "200000000000000000050")}},
+			"0",
+			"2",
+			pipeline.Result{Value: mustDecimal(t, "200000000000000000035")},
+		},
+		{
+			"massive integers",
+			[]pipeline.Result{{Value: mustDecimal(t, "340282366920938463463374607431768211455")}, {Value: mustDecimal(t, "340282366920938463463374607431768211450")}},
+			"0",
+			"2",
+			pipeline.Result{Value: mustDecimal(t, "340282366920938463463374607431768211452.5")},
+		},
+		{
+			"large integers",
+			[]pipeline.Result{{Value: mustInt(t, "200000000000000000020")}, {Value: mustInt(t, "200000000000000000050")}},
+			"0",
+			"2",
+			pipeline.Result{Value: mustDecimal(t, "200000000000000000035")},
+		},
+		{
+			"massive integers",
+			[]pipeline.Result{{Value: mustInt(t, "340282366920938463463374607431768211455")}, {Value: mustInt(t, "340282366920938463463374607431768211450")}},
+			"0",
+			"2",
+			pipeline.Result{Value: mustDecimal(t, "340282366920938463463374607431768211452.5")},
 		},
 	}
 
