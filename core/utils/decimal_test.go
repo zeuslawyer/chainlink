@@ -47,9 +47,11 @@ func TestDecimal(t *testing.T) {
 func TestDecimal_BigInt(t *testing.T) {
 	t.Parallel()
 
-	big := testutils.MustParseBigInt(t, "340282366920938463463374607431768211452.5")
+	const bigNumStr = "340282366920938463463374607431768211452"
+	big := testutils.MustParseBigInt(t, bigNumStr)
 	dec, err := utils.ToDecimal(big)
 	assert.NoError(t, err)
 	assert.Equal(t, big, dec.BigInt())
 	assert.Equal(t, big.String(), dec.String())
+	assert.Equal(t, big.String(), bigNumStr)
 }
