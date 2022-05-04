@@ -1,9 +1,11 @@
-package utils
+package utils_test
 
 import (
 	"math"
 	"testing"
 
+	"github.com/smartcontractkit/chainlink/core/internal/testutils"
+	"github.com/smartcontractkit/chainlink/core/utils"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -33,11 +35,21 @@ func TestDecimal(t *testing.T) {
 	}
 	for _, tc := range tt {
 		tc := tc
-		_, err := ToDecimal(tc.v)
+		_, err := utils.ToDecimal(tc.v)
 		if tc.expectedErr {
 			assert.Error(t, err)
 		} else {
 			assert.NoError(t, err)
 		}
 	}
+}
+
+func TestDecimal_BigInt(t *testing.T) {
+	t.Parallel()
+
+	big := testutils.MustParseBigInt(t, "340282366920938463463374607431768211452.5")
+	dec, err := utils.ToDecimal(big)
+	assert.NoError(t, err)
+	assert.Equal(t, big, dec.BigInt())
+	assert.Equal(t, big.String(), dec.String())
 }
