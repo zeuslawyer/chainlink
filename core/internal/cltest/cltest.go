@@ -119,7 +119,7 @@ var (
 	DefaultP2PKey      = p2pkey.MustNewV2XXXTestingOnly(big.NewInt(1))
 	DefaultSolanaKey   = solkey.MustNewInsecure(keystest.NewRandReaderFromSeed(1))
 	DefaultTerraKey    = terrakey.MustNewInsecure(keystest.NewRandReaderFromSeed(1))
-	DefaultStarknetKey = starkkey.MustNewInsecure(keystest.NewRandReaderFromSeed(1))
+	DefaultStarkNetKey = starkkey.MustNewInsecure(keystest.NewRandReaderFromSeed(1))
 	DefaultVRFKey      = vrfkey.MustNewV2XXXTestingOnly(big.NewInt(1))
 )
 
