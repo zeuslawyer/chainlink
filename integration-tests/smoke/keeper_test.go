@@ -46,8 +46,8 @@ const upkeepGasLimit = uint32(2500000)
 //var _ = Describe("Keeper v1.2 Check/Perform Gas limit test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, defaultRegistryConfig, PerformanceCounter, CheckPerformGasLimitTest))
 //var _ = Describe("Keeper v1.1 Register upkeep test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_1, defaultRegistryConfig, BasicCounter, RegisterUpkeepTest))
 //var _ = Describe("Keeper v1.2 Register upkeep test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, defaultRegistryConfig, BasicCounter, RegisterUpkeepTest))
-var _ = Describe("Keeper v1.2 Migrate upkeep from a registry to another (both are versions 1.2)",
-	getKeeperSuite(ethereum.RegistryVersion_1_2, defaultRegistryConfig, BasicCounter, MigrateUpkeepTest))
+
+var _ = Describe("Keeper v1.2 Migrate upkeep from a registry to another @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, defaultRegistryConfig, BasicCounter, MigrateUpkeepTest))
 
 var defaultRegistryConfig = contracts.KeeperRegistrySettings{
 	PaymentPremiumPPB:    uint32(200000000),
@@ -454,11 +454,11 @@ func getKeeperSuite(
 			}
 
 			if testToRun == MigrateUpkeepTest {
-				It("creates another registry of version 1.2, migrates an upkeep from the first to the second"+
+				It("creates another registry v1.2, migrates an upkeep from the first to the second"+
 					"registry and watches it perform", func() {
 					// The first registry was already created in the "BeforeEach" function, so here
 					// we just need to create another registry, this one has only 5 upkeeps instead of 10
-					secondRegistry, _, _, _ := actions.DeployKeeperContracts(
+					secondRegistry, secondRegistrar, _, _ := actions.DeployKeeperContracts(
 						registryVersion,
 						registryConfig,
 						5,
@@ -478,27 +478,60 @@ func getKeeperSuite(
 						log.Info().Int64("Upkeep counter", counter.Int64()).Msg("Upkeeps performed")
 					}, "1m", "1s").Should(Succeed())
 
-					err := registry.CancelUpkeep(big.NewInt(0))
+					err := registry.CancelUpkeep(upkeepIDs[0])
 					Expect(err).ShouldNot(HaveOccurred(), "Encountered error when cancelling the upkeep "+
 						"from the first registry")
 					err = networks.Default.WaitForEvents()
 					Expect(err).ShouldNot(HaveOccurred(), "Waiting for cancellation shouldn't fail")
 
-					// Now migrate the upkeep with ID 0 from the first registry to the second registry
-					err = secondRegistry.RegisterUpkeep(consumers[0].Address(), upkeepGasLimit, networks.Default.GetDefaultWallet().Address(), []byte("0x"))
-					Expect(err).ShouldNot(HaveOccurred(), "Encountered error when registering the upkeep")
-					err = networks.Default.WaitForEvents()
-					Expect(err).ShouldNot(HaveOccurred(), "Waiting for cancellation shouldn't fail")
+					// Get the counter after upkeep was cancelled
+					counterBeforeTheMigration, err := consumers[0].Counter(context.Background())
+					Expect(err).ShouldNot(HaveOccurred(), "Encountered error when retrieving counter"+
+						"right before the migration")
+					log.Info().Int64("Counter of upkeep to be migrated right before migration", counterBeforeTheMigration.Int64()).Msg("Upkeeps performed")
 
-					// Check that the upkeep is still performing, but now on the second registry
-					Eventually(func(g Gomega) {
-						counter, err := consumers[0].Counter(context.Background())
+					// Make sure that the counter is constant and that the upkeep was successfully cancelled
+					Consistently(func(g Gomega) {
+						// Expect the counter to remain constant because the upkeep was cancelled, so it shouldn't increase anymore
+						latestCounter, err := consumers[0].Counter(context.Background())
 						g.Expect(err).ShouldNot(HaveOccurred(), "Calling consumer's counter shouldn't fail")
-						g.Expect(counter.Int64()).Should(BeNumerically(">", int64(0)),
-							"Expected the counter of the first upkeep to be greater than 0, but got %d",
-							counter.Int64())
-						log.Info().Int64("Upkeep counter", counter.Int64()).Msg("Upkeeps performed")
+						g.Expect(latestCounter.Int64()).Should(Equal(counterBeforeTheMigration.Int64()),
+							"Expected consumer counter to remain constant at %d, but got %d",
+							counterBeforeTheMigration.Int64(), latestCounter.Int64())
 					}, "1m", "1s").Should(Succeed())
+
+					// I believe it would be better if instead of calling "registerUpkeep" for this one we would
+					// use the same logic that we used in the other branch when registering a new upkeep,
+					// because we know that worked.
+
+					// -------------------- This was the first attempt which didn't work ------------------
+					// Now migrate the upkeep with ID 0 from the first registry to the second registry
+					//err = secondRegistry.RegisterUpkeep(consumers[0].Address(), upkeepGasLimit,
+					//	networks.Default.GetDefaultWallet().Address(), []byte("0x"))
+					//Expect(err).ShouldNot(HaveOccurred(), "Encountered error when registering the upkeep")
+					//err = networks.Default.WaitForEvents()
+					//Expect(err).ShouldNot(HaveOccurred(), "Encountered error while waiting for confirmations")
+					// -------------------- End of the first attempt					-------------------
+
+					actions.RegisterUpkeepContracts(linkToken, big.NewInt(9e18), networks, upkeepGasLimit,
+						secondRegistry, secondRegistrar, 1, []string{consumers[0].Address()})
+					secondRegistry.
+
+						// Check that the upkeep is still performing, but now on the second registry
+						Eventually(func(g Gomega) {
+							currentCounter, err := consumers[0].Counter(context.Background())
+							log.Info().Int64("Counter of upkeep after migration", counterBeforeTheMigration.Int64()).Msg("Upkeeps performed")
+							g.Expect(err).ShouldNot(HaveOccurred(), "Encountered error when retrieving "+
+								"the upkeep's counter after migration")
+
+							g.Expect(currentCounter.Int64()).Should(BeNumerically(">", counterBeforeTheMigration.Int64()),
+								"Expected the counter after migration to be greater than original value %d, but got %d",
+								counterBeforeTheMigration.Int64(), currentCounter.Int64())
+
+							//Expect(counterBeforeTheMigration.Int64() < currentCounter.Int64()).To(BeTrue())
+
+							log.Info().Int64("Counter of upkeep which was successfully migrated", currentCounter.Int64())
+						}, "1m", "1s").Should(Succeed())
 				})
 			}
 		})
