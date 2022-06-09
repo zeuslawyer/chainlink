@@ -515,23 +515,22 @@ func getKeeperSuite(
 
 					actions.RegisterUpkeepContracts(linkToken, big.NewInt(9e18), networks, upkeepGasLimit,
 						secondRegistry, secondRegistrar, 1, []string{consumers[0].Address()})
-					secondRegistry.
 
-						// Check that the upkeep is still performing, but now on the second registry
-						Eventually(func(g Gomega) {
-							currentCounter, err := consumers[0].Counter(context.Background())
-							log.Info().Int64("Counter of upkeep after migration", counterBeforeTheMigration.Int64()).Msg("Upkeeps performed")
-							g.Expect(err).ShouldNot(HaveOccurred(), "Encountered error when retrieving "+
-								"the upkeep's counter after migration")
+					// Check that the upkeep is still performing, but now on the second registry
+					Eventually(func(g Gomega) {
+						currentCounter, err := consumers[0].Counter(context.Background())
+						log.Info().Int64("Counter of upkeep after migration", counterBeforeTheMigration.Int64()).Msg("Upkeeps performed")
+						g.Expect(err).ShouldNot(HaveOccurred(), "Encountered error when retrieving "+
+							"the upkeep's counter after migration")
 
-							g.Expect(currentCounter.Int64()).Should(BeNumerically(">", counterBeforeTheMigration.Int64()),
-								"Expected the counter after migration to be greater than original value %d, but got %d",
-								counterBeforeTheMigration.Int64(), currentCounter.Int64())
+						g.Expect(currentCounter.Int64()).Should(BeNumerically(">", counterBeforeTheMigration.Int64()),
+							"Expected the counter after migration to be greater than original value %d, but got %d",
+							counterBeforeTheMigration.Int64(), currentCounter.Int64())
 
-							//Expect(counterBeforeTheMigration.Int64() < currentCounter.Int64()).To(BeTrue())
+						//Expect(counterBeforeTheMigration.Int64() < currentCounter.Int64()).To(BeTrue())
 
-							log.Info().Int64("Counter of upkeep which was successfully migrated", currentCounter.Int64())
-						}, "1m", "1s").Should(Succeed())
+						log.Info().Int64("Counter of upkeep which was successfully migrated", currentCounter.Int64())
+					}, "1m", "1s").Should(Succeed())
 				})
 			}
 		})
