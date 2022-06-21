@@ -561,17 +561,52 @@ func getKeeperSuite(
 
 			if testToRun == MigrateUpkeepTest {
 				It("creates another registry and migrates one upkeep to the new registry", func() {
-					// The first registry was already created in the "BeforeEach" function, so here
-					// we need to create the second registry
-					secondRegistry, secondRegistrar, _, _ := actions.DeployKeeperContracts(
-						registryVersion,
-						registryConfig,
-						5,
-						upkeepGasLimit,
-						linkToken,
-						contractDeployer,
-						networks,
+					// We need to set the transcoder. And because the first registry is already,
+					// deployed, the only place to set the transcoder is here.
+					ef, err := contractDeployer.DeployMockETHLINKFeed(big.NewInt(2e18))
+					Expect(err).ShouldNot(HaveOccurred(), "Deploying mock ETH-Link feed shouldn't fail")
+					gf, err := contractDeployer.DeployMockGasFeed(big.NewInt(2e11))
+					Expect(err).ShouldNot(HaveOccurred(), "Deploying mock gas feed shouldn't fail")
+					err = networks.Default.WaitForEvents()
+					Expect(err).ShouldNot(HaveOccurred(), "Failed waiting for mock feeds to deploy")
+
+					registry2 := actions.DeployKeeperRegistry(contractDeployer, networks,
+						&contracts.KeeperRegistryOpts{
+							RegistryVersion: registryVersion,
+							LinkAddr:        linkToken.Address(),
+							ETHFeedAddr:     ef.Address(),
+							GasFeedAddr:     gf.Address(),
+							TranscoderAddr:  ZeroAddress.Hex(),
+							RegistrarAddr:   actions.ZeroAddress.Hex(),
+							Settings:        registryConfig,
+						},
 					)
+
+					// Fund the registry with 1 LINK * amount of KeeperConsumerPerformance contracts
+					err = linkToken.Transfer(registry.Address(), big.NewInt(0).Mul(big.NewInt(1e18), big.NewInt(int64(10))))
+					Expect(err).ShouldNot(HaveOccurred(), "Funding keeper registry contract shouldn't fail")
+
+					registrarSettings := contracts.KeeperRegistrarSettings{
+						AutoRegister:     true,
+						WindowSizeBlocks: uint32(6000000),
+						AllowedPerWindow: 1000, // we might need to register new upkeeps later on in the tests, so it's good to have a buffer
+						RegistryAddr:     registry.Address(),
+						MinLinkJuels:     big.NewInt(0),
+					}
+					registrar2 := actions.DeployKeeperRegistrar(linkToken, registrarSettings, contractDeployer, networks, registry)
+
+					upkeeps2 := actions.DeployKeeperConsumers(contractDeployer, networks, 10)
+					var upkeepsAddresses []string
+					for _, upkeep := range upkeeps2 {
+						upkeepsAddresses = append(upkeepsAddresses, upkeep.Address())
+					}
+					upkeepIDs2 := actions.RegisterUpkeepContracts(linkToken, big.NewInt(9e18), networks, upkeepGasLimit,
+						registry, registrar, 10, upkeepsAddresses)
+
+					// Set the jobs for the second registry
+					actions.CreateKeeperJobs(chainlinkNodes, registry2)
+					err = networks.Default.WaitForEvents()
+					Expect(err).ShouldNot(HaveOccurred(), "Error creating keeper jobs")
 
 					// Check that the first upkeep from the first registry is performing (before being migrated)
 					Eventually(func(g Gomega) {
@@ -580,6 +615,8 @@ func getKeeperSuite(
 						g.Expect(counter.Cmp(big.NewInt(0)) == 1, "Expected the counter of the first upkeep to be greater than 0, but got %s", counter)
 						log.Info().Int64("Upkeep counter", counter.Int64()).Msg("Upkeeps performed")
 					}, "1m", "1s").Should(Succeed())
+
+					// Migrate the upkeep with ID 0 from the first to the second registry
 
 					// Cancel the upkeep on the first registry
 					err := registry.CancelUpkeep(upkeepIDs[0])
