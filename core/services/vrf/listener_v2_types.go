@@ -26,6 +26,7 @@ type batchFulfillment struct {
 	reqIDs        []*big.Int
 	lbs           []log.Broadcast
 	maxLinks      []interface{}
+	txHashes      []common.Hash
 }
 
 func newBatchFulfillment(result vrfPipelineResult) *batchFulfillment {
@@ -48,6 +49,9 @@ func newBatchFulfillment(result vrfPipelineResult) *batchFulfillment {
 		},
 		maxLinks: []interface{}{
 			result.maxLink,
+		},
+		txHashes: []common.Hash{
+			result.req.req.Raw.TxHash,
 		},
 	}
 }
@@ -89,6 +93,7 @@ func (b *batchFulfillments) addRun(result vrfPipelineResult) {
 			currBatch.reqIDs = append(currBatch.reqIDs, result.req.req.RequestId)
 			currBatch.lbs = append(currBatch.lbs, result.req.lb)
 			currBatch.maxLinks = append(currBatch.maxLinks, result.maxLink)
+			currBatch.txHashes = append(currBatch.txHashes, result.req.req.Raw.TxHash)
 		}
 	}
 }
@@ -150,9 +155,10 @@ func (lsn *listenerV2) processBatch(
 			GasLimit:       totalGasLimitBumped,
 			Strategy:       txmgr.NewSendEveryStrategy(),
 			Meta: &txmgr.EthTxMeta{
-				RequestIDs: reqIDHashes,
-				MaxLink:    &maxLinkStr,
-				SubID:      &subID,
+				RequestIDs:      reqIDHashes,
+				MaxLink:         &maxLinkStr,
+				SubID:           &subID,
+				RequestTxHashes: batch.txHashes,
 			},
 		}, pg.WithQueryer(tx))
 
