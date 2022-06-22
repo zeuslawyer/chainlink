@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"strconv"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -30,6 +31,7 @@ const (
 	RegisterUpkeepTest
 	AddFundsToUpkeepTest
 	RemovingKeeperTest
+	HandleKeeperNodesGoingDown
 )
 
 type KeeperConsumerContracts int32
@@ -41,18 +43,20 @@ const (
 
 const upkeepGasLimit = uint32(2500000)
 
-var _ = Describe("Keeper v1.1 basic smoke test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_1, defaultRegistryConfig, BasicCounter, BasicSmokeTest))
-var _ = Describe("Keeper v1.2 basic smoke test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, defaultRegistryConfig, BasicCounter, BasicSmokeTest))
-var _ = Describe("Keeper v1.1 BCPT test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_1, highBCPTRegistryConfig, BasicCounter, BcptTest))
-var _ = Describe("Keeper v1.2 BCPT test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, highBCPTRegistryConfig, BasicCounter, BcptTest))
-var _ = Describe("Keeper v1.2 Perform simulation test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, defaultRegistryConfig, PerformanceCounter, PerformSimulationTest))
-var _ = Describe("Keeper v1.2 Check/Perform Gas limit test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, defaultRegistryConfig, PerformanceCounter, CheckPerformGasLimitTest))
-var _ = Describe("Keeper v1.1 Register upkeep test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_1, defaultRegistryConfig, BasicCounter, RegisterUpkeepTest))
-var _ = Describe("Keeper v1.2 Register upkeep test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, defaultRegistryConfig, BasicCounter, RegisterUpkeepTest))
-var _ = Describe("Keeper v1.1 Add funds to upkeep test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_1, defaultRegistryConfig, BasicCounter, AddFundsToUpkeepTest))
-var _ = Describe("Keeper v1.2 Add funds to upkeep test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, defaultRegistryConfig, BasicCounter, AddFundsToUpkeepTest))
-var _ = Describe("Keeper v1.1 Removing one keeper test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_1, defaultRegistryConfig, BasicCounter, RemovingKeeperTest))
-var _ = Describe("Keeper v1.2 Removing one keeper test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, defaultRegistryConfig, BasicCounter, RemovingKeeperTest))
+//var _ = Describe("Keeper v1.1 basic smoke test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_1, defaultRegistryConfig, BasicCounter, BasicSmokeTest))
+//var _ = Describe("Keeper v1.2 basic smoke test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, defaultRegistryConfig, BasicCounter, BasicSmokeTest))
+//var _ = Describe("Keeper v1.1 BCPT test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_1, highBCPTRegistryConfig, BasicCounter, BcptTest))
+//var _ = Describe("Keeper v1.2 BCPT test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, highBCPTRegistryConfig, BasicCounter, BcptTest))
+//var _ = Describe("Keeper v1.2 Perform simulation test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, defaultRegistryConfig, PerformanceCounter, PerformSimulationTest))
+//var _ = Describe("Keeper v1.2 Check/Perform Gas limit test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, defaultRegistryConfig, PerformanceCounter, CheckPerformGasLimitTest))
+//var _ = Describe("Keeper v1.1 Register upkeep test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_1, defaultRegistryConfig, BasicCounter, RegisterUpkeepTest))
+//var _ = Describe("Keeper v1.2 Register upkeep test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, defaultRegistryConfig, BasicCounter, RegisterUpkeepTest))
+//var _ = Describe("Keeper v1.1 Add funds to upkeep test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_1, defaultRegistryConfig, BasicCounter, AddFundsToUpkeepTest))
+//var _ = Describe("Keeper v1.2 Add funds to upkeep test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, defaultRegistryConfig, BasicCounter, AddFundsToUpkeepTest))
+//var _ = Describe("Keeper v1.1 Removing one keeper test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_1, defaultRegistryConfig, BasicCounter, RemovingKeeperTest))
+//var _ = Describe("Keeper v1.2 Removing one keeper test @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, defaultRegistryConfig, BasicCounter, RemovingKeeperTest))
+//var _ = Describe("Keeper v1.1 Handle keeper nodes going down @keeper", getKeeperSuite(ethereum.RegistryVersion_1_1, defaultRegistryConfig, BasicCounter, HandleKeeperNodesGoingDown))
+var _ = Describe("Keeper v1.2 Handle keeper nodes going down @keeper", getKeeperSuite(ethereum.RegistryVersion_1_2, defaultRegistryConfig, BasicCounter, HandleKeeperNodesGoingDown))
 
 var defaultRegistryConfig = contracts.KeeperRegistrySettings{
 	PaymentPremiumPPB:    uint32(200000000),
@@ -553,6 +557,63 @@ func getKeeperSuite(
 								"than initial counter which was %s, but got %s", initialCounters[i], counter)
 						}
 					}, "1m", "1s").Should(Succeed())
+				})
+			}
+
+			if testToRun == HandleKeeperNodesGoingDown {
+				It("takes down half of the keeper nodes and watches upkeeps get performed slower", func() {
+					// Record how much time it takes to have all the registered upkeeps perform 5 times each
+					const numberOfTimesUpkeepsShouldPerform int64 = 5
+					var completedUpkeepsFirstTime = 0
+					var alreadyMarkedFirstTime = make([]bool, len(upkeepIDs))
+					for i := 0; i < len(alreadyMarkedFirstTime); i++ {
+						alreadyMarkedFirstTime[i] = false
+					}
+
+					firstStart := time.Now()
+					for completedUpkeepsFirstTime < len(upkeepIDs) {
+						for i := 0; i < len(upkeepIDs); i++ {
+							counter, err := consumers[i].Counter(context.Background())
+							Expect(err).ShouldNot(HaveOccurred(), "Failed to get counter for upkeepID"+strconv.Itoa(i))
+
+							if counter.Cmp(big.NewInt(numberOfTimesUpkeepsShouldPerform)) == 0 && !alreadyMarkedFirstTime[i] {
+								completedUpkeepsFirstTime++
+								alreadyMarkedFirstTime[i] = true
+							}
+						}
+					}
+					firstElapsed := time.Since(firstStart)
+					fmt.Printf("First time it took %s", firstElapsed)
+
+					// Now we need to take down half of the keeper nodes
+					nodesToTakeDown := chainlinkNodes[:len(chainlinkNodes)/2+1]
+
+					if err := actions.ReturnFunds(nodesToTakeDown, networks); err != nil {
+						log.Error().Err(err).Str("Namespace", env.Namespace).
+							Msg("Error attempting to return funds from chainlink nodes to network's default wallet. " +
+								"Environment is left running so you can try manually!")
+						env.Persistent = true
+					}
+
+					var completedUpkeepsSecondTime = 0
+					var alreadyMarkedSecondTime = make([]bool, len(upkeepIDs))
+					for i := 0; i < len(alreadyMarkedSecondTime); i++ {
+						alreadyMarkedSecondTime[i] = false
+					}
+
+					secondStart := time.Now()
+					for completedUpkeepsSecondTime < len(upkeepIDs) {
+						for i := 0; i < len(upkeepIDs); i++ {
+							counter, err := consumers[i].Counter(context.Background())
+							Expect(err).ShouldNot(HaveOccurred(), "Failed to get counter for upkeepID"+strconv.Itoa(i))
+							if counter.Cmp(big.NewInt(10)) == 0 && !alreadyMarkedSecondTime[i] {
+								completedUpkeepsSecondTime++
+								alreadyMarkedSecondTime[i] = true
+							}
+						}
+					}
+					secondElapsed := time.Since(secondStart)
+					fmt.Printf("Second time it took %s", secondElapsed)
 				})
 			}
 		})
